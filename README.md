@@ -1,87 +1,146 @@
-# Agrigent — FortyGuard Hackathon 2026
+# ThermoGuard
 
-AI agent that turns hyperlocal heat data (FortyGuard) + weather/UV data (Open-Meteo)
-into daily, plain-language farming actions: irrigation timing, fertilizer timing,
-UV/sun-safety guidance, and frost warnings.
+**Smarter Monitoring. Safer Environments.**
+
+A real-time industrial heat-safety monitor that tracks worker heat stress
+and fire risk zone-by-zone, distinguishing between the two because they are
+genuinely different hazards with different thresholds and different
+responses. Every alert is produced by a deterministic, explainable rules
+engine — not a black-box model — with an AI agent layer that only explains
+those determinations in plain language, never overrides them.
+
+Built for **FortyGuard Hackathon 2026**.
+
+![ThermoGuard](https://img.shields.io/badge/status-hackathon--demo-blue)
+
+---
+
+## Why this exists
+
+Industrial facilities face two distinct heat-related dangers that are often
+monitored the same way, even though they shouldn't be:
+
+- **Worker heat stress** — factory floors, loading bays. Governed by
+  heat-index thresholds (temperature + humidity), not raw temperature alone.
+- **Fire / ignition risk** — chemical storage, hazardous material zones.
+  Governed by tighter, temperature-driven thresholds, since the failure mode
+  is combustion, not discomfort.
+
+ThermoGuard treats these as separate risk tracks, tightens both dynamically
+based on real outdoor conditions, and — for the fire-risk track — can
+trigger a real emergency SMS the moment a hazardous zone crosses into
+critical territory.
+
+## Stack
+
+| Layer | Technology | Why |
+|---|---|---|
+| Frontend | Next.js (App Router) + TypeScript | Interactive dashboard, role-based pages |
+| Backend | Express + Mongoose | REST API, MongoDB data layer |
+| Database | MongoDB (Atlas free tier) | Users, sensor reading history |
+| Auth | JWT + bcrypt | Staff / Administrator role-based access |
+| AI agent | Groq (Llama 3.3 70B, free tier) | Explains alerts in plain language |
+| Outdoor conditions | Open-Meteo (free) | Dynamically tightens indoor thresholds |
+| Heat visualization | FortyGuard API | Facility-area heatmap (bonus feature) |
+| Emergency alerts | Twilio | Real SMS to a facility's emergency contact |
+
+## Architecture
+
+```
+[Slider now / real IoT sensor later] → POST /api/sensor-reading
+                                              ↓
+                                    persisted to MongoDB
+                                              ↓
+                    Open-Meteo outdoor conditions → dynamic threshold adjustment
+                                              ↓
+                         Rules Engine (deterministic, fully explainable)
+                         worker zones: heat-index based
+                         hazard zones: fire-risk based, tighter tolerance
+                                              ↓
+                         Groq agent explains status (never recalculates)
+                                              ↓
+              Critical + hazard zone → Twilio SMS to emergency contact
+```
+
+**The one seam that matters:** `POST /api/sensor-reading` is the only place
+indoor temperature enters the system. The demo dashboard's sliders call it.
+A real IoT sensor would call the exact same endpoint instead — nothing else
+in the system changes.
+
+## Pages
+
+| Route | Access | Purpose |
+|---|---|---|
+| `/signin` | Public | Sign in / sign up, role selection |
+| `/dashboard` | Staff, Admin | Live facility map, zone status, agent chat |
+| `/history` | Staff, Admin | Last 5 readings per zone (MongoDB) |
+| `/alerts` | Staff, Admin | Zones currently at warning/critical |
+| `/reports` | Staff, Admin | Daily high/low/average per zone |
+| `/settings` | Staff (view), Admin (edit) | Emergency contact number |
+
+Role checks are enforced on the **backend**, not just hidden in the UI —
+a Staff account cannot edit settings even by calling the API directly.
 
 ## Setup
 
+### 1. MongoDB
+Create a free cluster at [mongodb.com/atlas](https://mongodb.com/atlas),
+allow network access from anywhere (fine for a hackathon demo), and copy
+your connection string.
+
+### 2. Backend
 ```bash
+cd backend
 npm install
 cp .env.example .env
-# then fill in FORTYGUARD_API_KEY and ANTHROPIC_API_KEY in .env
+# fill in GROQ_API_KEY, FORTYGUARD_API_KEY, MONGODB_URI, JWT_SECRET, Twilio vars
 npm start
 ```
-
-Server runs at `http://localhost:3000`.
-
-## Project structure
-
-```
-agrigent/
-  server.js              # Express routes, ties everything together
-  services/
-    fortyguard.js         # FortyGuard heat API calls
-    weather.js             # Open-Meteo (UV, humidity, rain) — free, no key
-    rulesEngine.js          # Crop + weather + heat -> structured recommendations
-    agent.js                 # Claude API calls: summary + follow-up chat
-  public/                    # Frontend goes here (static files served by Express)
-  .env.example
+Generate `JWT_SECRET` with:
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
 
-No database. Chat history is kept in memory per session (resets on server
-restart) — enough for a hackathon demo. If you want the farmer's last search
-to persist across visits on their own device, use browser `localStorage` in
-the frontend; that needs no backend change.
-
-## API contract (for frontend work)
-
-### `POST /api/advisory`
-Request:
-```json
-{ "location": "Fresno, CA", "lat": 36.75, "lon": -119.77, "crop": "wheat", "growthStage": "flowering" }
-```
-Response:
-```json
-{
-  "sessionId": "uuid-used-for-chat",
-  "heat": { "temperature_f": 104, "risk_level": "high" },
-  "weather": { "current": { "tempC": 34, "uvIndex": 9, "humidityPct": 22 }, "next3Days": [ ... ] },
-  "results": [
-    { "category": "irrigation", "level": "warning", "message": "...", "action": "..." },
-    { "category": "fertilizer", "level": "info", "message": "...", "action": "..." },
-    { "category": "uv", "level": "warning", "message": "...", "action": "..." }
-  ],
-  "agentSummary": "Plain-language paragraph the farmer reads first."
-}
+### 3. Frontend
+```bash
+cd frontend
+npm install
+cp .env.local.example .env.local
+npm run dev
 ```
 
-### `POST /api/chat`
-Request:
-```json
-{ "sessionId": "uuid-from-advisory-response", "message": "why shouldn't I fertilize today?" }
-```
-Response:
-```json
-{ "reply": "Grounded, plain-language answer." }
-```
+Open `http://localhost:3001` — you'll land on the Sign In page. Create an
+account, choose Staff or Administrator, and you're in.
 
-Frontend can build against this contract with mock JSON before the backend
-key is even set up — just hardcode a sample response matching the shape above.
+## On "accuracy"
 
-## Test scenarios to build/demo against
+This is a rules engine, not a trained model — there is no honest accuracy
+percentage to quote without real-world validation against real facility
+data and real incidents over time. Every alert includes a `reasoning` field
+specifically so a real deployment could be validated against real outcomes
+later. This is a design choice, not a limitation: for a system that can
+trigger a real emergency call, every decision needs to be traceable to an
+explicit, auditable rule — not a model's internal weights.
 
-Pick 3 fixed lat/lon + crop combos so your demo is reliable:
-1. **Heatwave** — e.g. Phoenix, AZ + cotton (should trigger irrigation + UV warnings)
-2. **Heavy rain forecast** — pick a location with rain in the 3-day forecast + wheat (should trigger the fertilizer-delay rule)
-3. **Normal day** — a mild location (should return mostly "info" level, calm tone)
+## On the surrounding-area map
 
-Run each through `/api/advisory` and check the `agentSummary` reads naturally
-and doesn't contradict the `results` array.
+The dashboard's map is a **stylized visual**, not real map tiles — pins
+show small variations around one real outdoor reading (Open-Meteo), since a
+real dense outdoor sensor network isn't available for this demo. Swapping in
+real Leaflet + OpenStreetMap tiles is a natural next step for a production
+version.
 
-## Notes on rules engine thresholds
+## Roadmap (not built yet, good next steps)
 
-The thresholds in `rulesEngine.js` are general agronomic heuristics for demo
-purposes, not validated local guidance. Say this plainly in your pitch —
-being upfront that you'd swap in official extension-office data for
-production is a credibility point, not a weakness.
+- Real IoT sensor integration (ESP32 + thermistor, or industrial-grade
+  sensors) posting to the existing `/api/sensor-reading` endpoint — no other
+  code changes required.
+- Field validation of rules-engine thresholds against real facility safety
+  data and OSHA guidance for the specific industry.
+- Real interactive map tiles instead of the stylized version.
+- Multi-facility support (currently single facility for demo clarity).
+
+## License
+
+Built for FortyGuard Hackathon 2026. Not intended for production safety use
+without professional safety-engineering review and real-world validation.

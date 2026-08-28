@@ -12,7 +12,7 @@
  */
 
 const GROQ_URL = "https://api.groq.com/openai/v1/chat/completions";
-const MODEL = "openai/gpt-oss-120b";
+const MODEL = "llama-3.3-70b-versatile";
 
 const SYSTEM_PROMPT = `You are the ThermalGuard Agent, an industrial heat-safety assistant embedded in a facility monitoring dashboard.
 

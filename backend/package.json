@@ -12,7 +12,6 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
-    "groq-sdk": "^1.6.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.5.1",
     "twilio": "^5.3.0"
